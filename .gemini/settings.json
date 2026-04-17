@@ -1,0 +1,8 @@
+{
+  "ui": {
+    "inlineThinkingMode": "full"
+  },
+  "general": {
+    "defaultApprovalMode": "auto_edit"
+  }
+}
