@@ -231,7 +231,7 @@ export default function AuthPage() {
                   Workspace Setup Required
                 </p>
                 <p className="mt-2 text-sm leading-relaxed text-amber-100/80">
-                  Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+                  Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
                   to enable sign-in, channels, and real-time sync.
                 </p>
               </div>

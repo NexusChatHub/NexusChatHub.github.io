@@ -1,36 +1,144 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NexusChatHub
 
-## Getting Started
+NexusChatHub is a premium-styled realtime chat workspace built with Next.js, Tailwind CSS v4, Framer Motion, and Supabase Auth + Realtime.
 
-First, run the development server:
+## What It Includes
+
+- Realtime channels and messages
+- Presence and typing indicators
+- Reactions, editing, and moderation-ready message UI
+- Supabase email/password auth
+- Static export for GitHub Pages
+- Mobile-friendly chat layout
+
+## Tech Stack
+
+- Next.js 16
+- React 19
+- Tailwind CSS v4
+- Supabase JavaScript client
+- Framer Motion
+- Lucide icons
+
+## Local Setup
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Create your local env file:
+
+```bash
+cp .env.example .env.local
+```
+
+3. Start development:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+4. Open:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Environment Variables
 
-## Learn More
+The app supports Supabase's current publishable key naming, and still falls back to the older anon-key name for compatibility.
 
-To learn more about Next.js, take a look at the following resources:
+Required:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Optional:
 
-## Deploy on Vercel
+```bash
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Notes:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is the preferred frontend key.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` is only kept as a fallback for older setups.
+- The Postgres connection string is not used by the frontend app.
+
+## Supabase CLI
+
+Useful commands for working with your linked project:
+
+```bash
+supabase login
+supabase init
+supabase link --project-ref your-project-ref
+```
+
+## Build
+
+Run a production build locally with:
+
+```bash
+npm run build
+```
+
+## GitHub Pages Deployment
+
+This repo is configured to deploy the exported Next.js site from GitHub Actions.
+
+In GitHub repository settings:
+
+1. Go to `Settings -> Pages`
+2. Set `Source` to `GitHub Actions`
+
+In GitHub repository secrets, add:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `NEXT_PUBLIC_TURNSTILE_SITE_KEY` if you use Turnstile in production
+
+The workflow builds the app, prepares `out/.nojekyll`, and publishes the static export.
+
+## Project Structure
+
+```text
+src/app/               App routes
+src/components/chat/   Chat interface components
+src/components/modals/ Modal UI
+src/hooks/             Reusable client hooks
+src/lib/               Supabase client and shared utilities
+.github/workflows/     GitHub Pages deployment
+```
+
+## Troubleshooting
+
+### Tailwind native binding error
+
+If you hit an error about `@tailwindcss/oxide-linux-x64-gnu`, reinstall dependencies:
+
+```bash
+rm -rf node_modules package-lock.json .next
+npm install
+```
+
+Then restart dev:
+
+```bash
+npm run dev
+```
+
+### GitHub Pages shows the README instead of the app
+
+That usually means Pages is using `Deploy from branch` instead of `GitHub Actions`.
+
+Switch it to:
+
+```text
+Settings -> Pages -> Source -> GitHub Actions
+```

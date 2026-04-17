@@ -116,8 +116,10 @@ export function useChat() {
     );
 
     if (!refreshedChannel) {
-      setActiveChannel(null);
-      return;
+      const timer = window.setTimeout(() => {
+        setActiveChannel(null);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
 
     if (
@@ -125,7 +127,10 @@ export function useChat() {
       refreshedChannel.description !== activeChannel.description ||
       refreshedChannel.created_by !== activeChannel.created_by
     ) {
-      setActiveChannel(refreshedChannel);
+      const timer = window.setTimeout(() => {
+        setActiveChannel(refreshedChannel);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [activeChannel, channels]);
 
@@ -178,16 +183,20 @@ export function useChat() {
   // Messages subscription
   useEffect(() => {
     if (!isSupabaseConfigured) {
-      setMessages([]);
-      setMessagesLoading(false);
-      return;
+      const timer = window.setTimeout(() => {
+        setMessages([]);
+        setMessagesLoading(false);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
 
     if (!activeChannel) {
-      setMessages([]);
-      setOnlineUsers([]);
-      setTypingUsers([]);
-      return;
+      const timer = window.setTimeout(() => {
+        setMessages([]);
+        setOnlineUsers([]);
+        setTypingUsers([]);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
     let cancelled = false;
 

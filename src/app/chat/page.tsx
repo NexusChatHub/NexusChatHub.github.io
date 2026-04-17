@@ -120,8 +120,12 @@ export default function ChatPage() {
   useEffect(() => {
     if (!activeChannel) return;
     window.localStorage.setItem(ACTIVE_CHANNEL_STORAGE_KEY, String(activeChannel.id));
-    setMessageQuery('');
-    setSidebarOpen(false);
+    const timer = window.setTimeout(() => {
+      setMessageQuery('');
+      setSidebarOpen(false);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [activeChannel]);
 
   const handleSendMessage = async (content: string) => {

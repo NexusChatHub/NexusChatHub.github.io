@@ -21,12 +21,16 @@ export function ProfileModal({ isOpen, onClose, user, onUpdate }: ProfileModalPr
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user) {
-      setUsername(user.user_metadata?.full_name || user.email?.split('@')[0] || '');
-      setAvatarUrl(user.user_metadata?.avatar_url || '');
-    }
-    setError(null);
-    setSuccess(false);
+    const timer = window.setTimeout(() => {
+      if (user) {
+        setUsername(user.user_metadata?.full_name || user.email?.split('@')[0] || '');
+        setAvatarUrl(user.user_metadata?.avatar_url || '');
+      }
+      setError(null);
+      setSuccess(false);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [user]);
 
   const handleUpdate = async (e: React.FormEvent) => {

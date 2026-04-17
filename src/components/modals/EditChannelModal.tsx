@@ -23,10 +23,14 @@ export function EditChannelModal({ isOpen, channel, onClose, onUpdate, onDelete 
 
   useEffect(() => {
     if (!isOpen || !channel) return;
-    setName(channel.name);
-    setDescription(channel.description || '');
-    setDeleteConfirm(false);
-    setError(null);
+    const timer = window.setTimeout(() => {
+      setName(channel.name);
+      setDescription(channel.description || '');
+      setDeleteConfirm(false);
+      setError(null);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [channel, isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
