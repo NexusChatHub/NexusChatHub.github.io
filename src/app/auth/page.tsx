@@ -29,7 +29,11 @@ import {
 } from '@/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
 
-const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+const turnstileSiteKeyRaw = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim();
+const turnstileSiteKey = turnstileSiteKeyRaw?.startsWith('http')
+  ? undefined
+  : turnstileSiteKeyRaw;
+const isTurnstileMisconfigured = Boolean(turnstileSiteKeyRaw && !turnstileSiteKey);
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -43,7 +47,7 @@ export default function AuthPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(
-    turnstileSiteKey ? null : 'local-bypass',
+    turnstileSiteKey ? null : isTurnstileMisconfigured ? null : 'local-bypass',
   );
   const { theme, toggleTheme } = useTheme();
   const isMinor = typeof age === 'number' && age < 13;
@@ -66,7 +70,12 @@ export default function AuthPage() {
       setError(SUPABASE_CONFIG_ERROR);
       return;
     }
-    
+
+    if (isTurnstileMisconfigured) {
+      setError('Turnstile is misconfigured. Use the Cloudflare site key, not your /auth page URL.');
+      return;
+    }
+
     if (turnstileSiteKey && !turnstileToken) {
       setError('Please complete the captcha verification.');
       return;
@@ -89,7 +98,13 @@ export default function AuthPage() {
 
     try {
       if (isLogin) {
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+          options: {
+            captchaToken: turnstileToken || undefined,
+          },
+        });
         if (signInError) throw signInError;
         router.push('/chat');
         return;
@@ -103,8 +118,9 @@ export default function AuthPage() {
             full_name: username,
             age: age,
             parent_email: isMinor ? parentEmail.trim() : null,
-            restricted: isMinor
+            restricted: isMinor,
           },
+          captchaToken: turnstileToken || undefined,
           emailRedirectTo: `${window.location.origin}/chat`,
         },
       });
@@ -130,13 +146,33 @@ export default function AuthPage() {
       return;
     }
 
+    if (isTurnstileMisconfigured) {
+      setError('Turnstile is misconfigured. Use the Cloudflare site key, not your /auth page URL.');
+      return;
+    }
+
+    if (turnstileSiteKey && !turnstileToken) {
+      setError('Please complete the captcha verification.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      const oauthCredentials: Parameters<typeof supabase.auth.signInWithOAuth>[0] & {
+        options: {
+          redirectTo: string;
+          captchaToken?: string;
+        };
+      } = {
         provider: 'google',
-        options: { redirectTo: `${window.location.origin}/chat` },
-      });
+        options: {
+          redirectTo: `${window.location.origin}/chat`,
+          captchaToken: turnstileToken || undefined,
+        },
+      };
+
+      const { error: oauthError } = await supabase.auth.signInWithOAuth(oauthCredentials);
       if (oauthError) throw oauthError;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Google sign-in failed.');
@@ -226,13 +262,25 @@ export default function AuthPage() {
 
           <form onSubmit={handleEmailAuth} className="space-y-5">
             {!isSupabaseConfigured && (
-              <div className="rounded-3xl border border-amber-500/20 bg-amber-500/10 p-4 text-left">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">
+              <div className="rounded-3xl border border-amber-500/30 bg-amber-500/10 p-4 text-left shadow-sm">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-800 dark:text-amber-300">
                   Workspace Setup Required
                 </p>
-                <p className="mt-2 text-sm leading-relaxed text-amber-100/80">
+                <p className="mt-2 text-sm leading-relaxed text-amber-950/80 dark:text-amber-100/80">
                   Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
                   to enable sign-in, channels, and real-time sync.
+                </p>
+              </div>
+            )}
+
+            {isTurnstileMisconfigured && (
+              <div className="rounded-3xl border border-orange-500/30 bg-orange-500/10 p-4 text-left shadow-sm">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-800 dark:text-orange-300">
+                  Captcha Config Error
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-orange-950/80 dark:text-orange-100/80">
+                  `NEXT_PUBLIC_TURNSTILE_SITE_KEY` currently looks like a URL. Use the
+                  Cloudflare Turnstile site key instead, usually something like `0x4AAAA...`.
                 </p>
               </div>
             )}
@@ -303,18 +351,32 @@ export default function AuthPage() {
             {/* Turnstile Captcha */}
             <div className="py-2 flex justify-center">
               {turnstileSiteKey ? (
-                <Turnstile siteKey={turnstileSiteKey} onSuccess={(token) => setTurnstileToken(token)} onExpire={() => setTurnstileToken(null)} options={{ theme: theme === 'dark' ? 'dark' : 'light' }} />
+                <Turnstile
+                  siteKey={turnstileSiteKey}
+                  onSuccess={(token) => {
+                    setTurnstileToken(token);
+                    setError(null);
+                  }}
+                  onExpire={() => setTurnstileToken(null)}
+                  onError={() => {
+                    setTurnstileToken(null);
+                    setError('Captcha failed to load. Check your Turnstile site key and allowed domains.');
+                  }}
+                  options={{ theme: theme === 'dark' ? 'dark' : 'light', size: 'flexible' }}
+                />
               ) : (
                 <div className="w-full p-4 rounded-2xl bg-[var(--bg-tertiary)] border border-[var(--border-color)] flex items-center gap-3">
                   <ShieldCheck className="w-5 h-5 text-emerald-500" />
-                  <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Verification Bypass Enabled</span>
+                  <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">
+                    {isTurnstileMisconfigured ? 'Invalid Turnstile Key' : 'Verification Bypass Enabled'}
+                  </span>
                 </div>
               )}
             </div>
 
             {error && (
               <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-                className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-black uppercase tracking-widest flex items-center gap-3"
+                className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-700 dark:text-red-400 text-xs font-black uppercase tracking-widest flex items-center gap-3"
               >
                 <ShieldAlert className="w-4 h-4 flex-shrink-0" />
                 {error}
@@ -325,7 +387,7 @@ export default function AuthPage() {
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-black uppercase tracking-widest flex items-center gap-3"
+                className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-xs font-black uppercase tracking-widest flex items-center gap-3"
               >
                 <ShieldCheck className="w-4 h-4 flex-shrink-0" />
                 {successMessage}
