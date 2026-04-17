@@ -27,9 +27,10 @@ import {
   isSupabaseConfigured,
   SUPABASE_CONFIG_ERROR,
 } from '@/lib/supabase';
+import { PUBLIC_TURNSTILE_SITE_KEY } from '@/lib/publicConfig';
 import { useTheme } from '@/hooks/useTheme';
 
-const turnstileSiteKeyRaw = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim();
+const turnstileSiteKeyRaw = PUBLIC_TURNSTILE_SITE_KEY?.trim();
 const turnstileSiteKey = turnstileSiteKeyRaw?.startsWith('http')
   ? undefined
   : turnstileSiteKeyRaw;
