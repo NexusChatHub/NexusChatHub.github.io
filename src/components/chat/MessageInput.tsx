@@ -23,6 +23,39 @@ const EMOJI_CATEGORIES = {
   'Hearts': ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '❤️‍🔥', '💕', '💞'],
 };
 
+const COMPOSER_TOOLS = [
+  {
+    icon: ImageIcon,
+    label: 'Image Link',
+    snippet: '![Release visual](https://example.com/preview.png)',
+  },
+  {
+    icon: FileText,
+    label: 'Doc Link',
+    snippet: '[Spec document](https://example.com/spec)',
+  },
+  {
+    icon: Code,
+    label: 'Code Block',
+    snippet: '```ts\n// share code here\n```',
+  },
+];
+
+const QUICK_INSERTS = [
+  {
+    label: 'Standup',
+    snippet: '**Standup update**\n- Shipped:\n- Next:\n- Blockers:',
+  },
+  {
+    label: 'Launch',
+    snippet: '**Launch note**\nWhat changed:\n- \nImpact:\n- \nRollback:\n- ',
+  },
+  {
+    label: 'Bug Triage',
+    snippet: '**Bug triage**\nSeverity: \nOwner: \nStatus: \nNotes: ',
+  },
+];
+
 const MAX_LENGTH_RESTRICTED = 200;
 
 export function MessageInput({
@@ -37,7 +70,6 @@ export function MessageInput({
   isRestricted = false,
 }: MessageInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showEmojis, setShowEmojis] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
@@ -51,9 +83,16 @@ export function MessageInput({
   useEffect(() => {
     const element = textareaRef.current;
     if (!element) return;
-    element.style.height = '0px';
-    element.style.height = `${Math.min(element.scrollHeight, 240)}px`;
+    element.style.height = 'auto';
+    element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
   }, [value]);
+
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      onTypingStop?.();
+    };
+  }, [onTypingStop]);
 
   const handleTextChange = (val: string) => {
     onChange(val);
@@ -100,6 +139,32 @@ export function MessageInput({
     }
   };
 
+  const insertSnippet = (snippet: string) => {
+    const textarea = textareaRef.current;
+
+    if (textarea) {
+      const start = textarea.selectionStart ?? value.length;
+      const end = textarea.selectionEnd ?? value.length;
+      const prefix = value.slice(0, start);
+      const suffix = value.slice(end);
+      const needsLeadingBreak = prefix && !prefix.endsWith('\n') ? '\n' : '';
+      const needsTrailingBreak = suffix && !suffix.startsWith('\n') ? '\n' : '';
+      const nextValue = `${prefix}${needsLeadingBreak}${snippet}${needsTrailingBreak}${suffix}`;
+
+      onChange(nextValue);
+      setTimeout(() => {
+        const cursorPosition = prefix.length + needsLeadingBreak.length + snippet.length;
+        textarea.selectionStart = cursorPosition;
+        textarea.selectionEnd = cursorPosition;
+        textarea.focus();
+      }, 0);
+    } else {
+      onChange(value ? `${value}\n${snippet}` : snippet);
+    }
+
+    setShowAttachments(false);
+  };
+
   const insertFormatting = (syntax: string) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -129,54 +194,48 @@ export function MessageInput({
   };
 
   return (
-    <div className="p-4 sm:p-8 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/90 to-transparent relative z-20">
+    <div className="p-4 sm:p-6 bg-gradient-to-t from-[var(--bg-primary)] via-[var(--bg-primary)]/95 to-transparent relative z-20">
       <div className="max-w-4xl mx-auto relative">
-        {/* Attachment Menu */}
         <AnimatePresence>
           {showAttachments && (
             <motion.div
               initial={{ opacity: 0, y: 15, scale: 0.9 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 15, scale: 0.9 }}
-              className="absolute bottom-full mb-4 left-0 glass p-3 rounded-[24px] border border-white/10 shadow-2xl z-50 flex gap-2"
+              className="absolute bottom-full mb-4 left-0 glass p-3 rounded-2xl border border-white/10 shadow-2xl z-50 flex gap-2"
             >
-              {[
-                { icon: <ImageIcon className="w-5 h-5 text-blue-400" />, label: 'Image' },
-                { icon: <FileText className="w-5 h-5 text-purple-400" />, label: 'Document' },
-                { icon: <Code className="w-5 h-5 text-emerald-400" />, label: 'Snippet' },
-              ].map((item) => (
+              {COMPOSER_TOOLS.map((item) => {
+                const Icon = item.icon;
+                return (
                 <button
                   key={item.label}
-                  onClick={() => {
-                    fileInputRef.current?.click();
-                    setShowAttachments(false);
-                  }}
-                  className="flex flex-col items-center gap-2 p-3 rounded-2xl hover:bg-white/5 transition-all group"
+                  onClick={() => insertSnippet(item.snippet)}
+                  className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-white/5 transition-all group"
                 >
-                  <div className="p-3 rounded-xl bg-white/5 border border-white/5 group-hover:scale-110 transition-transform shadow-lg">
-                    {item.icon}
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/5 group-hover:scale-110 transition-transform">
+                    <Icon className="w-5 h-5 text-blue-300" />
                   </div>
-                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40 group-hover:text-white transition-colors">
+                  <span className="text-[10px] font-bold text-white/40 group-hover:text-white">
                     {item.label}
                   </span>
                 </button>
-              ))}
+                );
+              })}
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Emoji Picker */}
         <AnimatePresence>
           {showEmojis && (
             <motion.div
               initial={{ opacity: 0, y: 15, scale: 0.9 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 15, scale: 0.9 }}
-              className="absolute bottom-full mb-4 left-0 glass p-5 rounded-[32px] border border-white/10 shadow-2xl z-50 w-80"
+              className="absolute bottom-full mb-4 left-0 glass p-5 rounded-[24px] border border-white/10 shadow-2xl z-50 w-80"
             >
               <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40">Emoji Intel</span>
-                <button onClick={() => setShowEmojis(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition-all">
+                <span className="text-xs font-bold text-white/40">Emojis</span>
+                <button onClick={() => setShowEmojis(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-white/40 hover:text-white">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -185,7 +244,7 @@ export function MessageInput({
                   <button
                     key={cat}
                     onClick={() => setEmojiCategory(cat)}
-                    className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                    className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all whitespace-nowrap ${
                       emojiCategory === cat
                         ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
                         : 'bg-white/5 text-white/40 hover:bg-white/10'
@@ -210,21 +269,15 @@ export function MessageInput({
           )}
         </AnimatePresence>
 
-        <input ref={fileInputRef} type="file" className="hidden" />
-
-        {/* Outer Container Glow */}
-        <div className={`absolute -inset-1 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-blue-500/20 rounded-[28px] blur-2xl transition-opacity duration-1000 pointer-events-none ${isTyping || loading ? 'opacity-100 animate-pulse' : 'opacity-0'}`} />
-
         <div
-          className={`relative bg-black/40 backdrop-blur-3xl border rounded-[26px] shadow-2xl transition-all duration-500 overflow-hidden ${
+          className={`relative bg-black/40 backdrop-blur-3xl border rounded-[22px] shadow-2xl transition-all duration-300 overflow-hidden ${
             isOverLimit
               ? 'border-red-500/40'
               : 'border-white/10 focus-within:border-blue-500/40'
-          } ${disabled ? 'opacity-30 grayscale pointer-events-none' : ''}`}
+          } ${disabled ? 'opacity-50 grayscale pointer-events-none' : ''}`}
         >
-          {/* Top Tools */}
-          <div className="flex items-center gap-1.5 px-5 py-3 border-b border-white/5 bg-white/5">
-             <div className="flex items-center gap-1 bg-black/20 rounded-xl p-1 border border-white/5 shadow-inner">
+          <div className="flex items-center gap-1.5 px-4 py-2 border-b border-white/5 bg-white/[0.02]">
+             <div className="flex items-center gap-1 bg-black/20 rounded-lg p-0.5 border border-white/5">
                 {[
                   { icon: <Bold className="w-3.5 h-3.5" />, action: 'bold' },
                   { icon: <Italic className="w-3.5 h-3.5" />, action: 'italic' },
@@ -233,31 +286,30 @@ export function MessageInput({
                   <button
                     key={action}
                     onClick={() => insertFormatting(action)}
-                    className="p-2 rounded-lg text-white/30 hover:text-white hover:bg-white/10 transition-all active:scale-95"
+                    className="p-2 rounded-lg text-white/30 hover:text-white hover:bg-white/10 transition-all"
                   >
                     {icon}
                   </button>
                 ))}
              </div>
-             <div className="w-px h-6 bg-white/5 mx-2" />
-             <div className="flex items-center gap-2">
+             <div className="w-px h-5 bg-white/5 mx-2" />
+             <div className="flex items-center gap-1">
                 <button
                   onClick={() => setShowAttachments(!showAttachments)}
-                  className={`p-2 rounded-xl transition-all active:scale-95 ${showAttachments ? 'bg-blue-600 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`}
+                  className={`p-2 rounded-xl transition-all ${showAttachments ? 'bg-blue-600 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`}
                 >
                   <Paperclip className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setShowEmojis(!showEmojis)}
-                  className={`p-2 rounded-xl transition-all active:scale-95 ${showEmojis ? 'bg-blue-600 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`}
+                  className={`p-2 rounded-xl transition-all ${showEmojis ? 'bg-blue-600 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`}
                 >
                   <Smile className="w-4 h-4" />
                 </button>
              </div>
              {charLimit && (
-              <div className="ml-auto flex items-center gap-2 px-3 py-1 rounded-lg bg-black/20 border border-white/5">
-                <div className={`w-1.5 h-1.5 rounded-full ${isOverLimit ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'bg-blue-500'}`} />
-                <span className={`text-[9px] font-black uppercase tracking-widest ${isOverLimit ? 'text-red-400' : 'text-white/40'}`}>
+              <div className="ml-auto flex items-center gap-2 px-2 py-1 rounded-lg bg-black/20 border border-white/5">
+                <span className={`text-[10px] font-bold ${isOverLimit ? 'text-red-400' : 'text-white/30'}`}>
                   {charCount}/{charLimit}
                 </span>
               </div>
@@ -265,6 +317,21 @@ export function MessageInput({
           </div>
 
           <div className="flex flex-col">
+            {!value.trim() && !disabled && (
+              <div className="flex flex-wrap gap-2 px-4 pt-4">
+                {QUICK_INSERTS.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => insertSnippet(item.snippet)}
+                    className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-white/40 transition-all hover:border-blue-500/20 hover:bg-blue-500/10 hover:text-white"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <textarea
               ref={textareaRef}
               rows={1}
@@ -276,73 +343,52 @@ export function MessageInput({
                   void submit();
                 }
               }}
-              placeholder={disabled ? 'SIGNAL OFFLINE...' : `ESTABLISH FREQUENCY IN #${activeChannelName || 'WORKSPACE'}...`}
-              className="w-full bg-transparent border-none px-7 py-5 text-[15px] text-white placeholder:text-white/10 focus:outline-none resize-none min-h-[70px] leading-relaxed font-medium"
+              placeholder={disabled ? 'Disconnected...' : `Message #${activeChannelName || 'channel'}...`}
+              className="w-full bg-transparent border-none px-6 py-4 text-[15px] text-white placeholder:text-white/20 focus:outline-none resize-none min-h-[60px] leading-relaxed font-medium"
             />
 
-            <div className="flex items-center justify-between px-6 pb-5">
+            <div className="flex items-center justify-between px-5 pb-4">
               <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 group cursor-pointer active:scale-95 transition-all">
-                  <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center text-white/30 group-hover:text-white/60 transition-colors">
-                    <Mic className="w-3.5 h-3.5" />
-                  </div>
-                  <span className="text-[8px] font-black uppercase tracking-[0.2em] text-white/20 group-hover:text-white/40 transition-colors">Audio Off</span>
+                <div className="flex items-center gap-2 text-white/20">
+                  <Mic className="w-3.5 h-3.5" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Audio Off</span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <AnimatePresence>
-                  {value.trim() && !isOverLimit && (
-                    <motion.div
-                      initial={{ opacity: 0, x: 20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 20 }}
-                      className="hidden sm:flex items-center gap-2"
-                    >
-                      <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white/20">Ready to transmit</span>
-                      <div className="px-2 py-1 rounded bg-white/5 border border-white/10">
-                        <span className="text-[8px] font-black text-white/40 uppercase">ENTER</span>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => void submit()}
                   disabled={disabled || loading || !value.trim() || isOverLimit}
-                  className={`relative group flex items-center justify-center gap-2 h-11 px-8 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] transition-all duration-500 overflow-hidden shadow-2xl ${
+                  className={`flex items-center justify-center gap-2 h-10 px-6 rounded-xl font-bold text-xs transition-all ${
                     !value.trim() || loading || disabled || isOverLimit
                       ? 'bg-white/5 text-white/20 border border-white/5'
-                      : 'bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 text-white border border-blue-400/40 hover:scale-105 active:scale-95 shadow-blue-500/25'
+                      : 'bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/20 active:scale-95'
                   }`}
                 >
                   {loading ? (
-                    <LoaderCircle className="w-5 h-5 animate-spin" />
+                    <LoaderCircle className="w-4 h-4 animate-spin" />
                   ) : (
                     <>
-                      <Send className={`w-4 h-4 transition-transform duration-500 ${value.trim() ? 'translate-x-1 -translate-y-1' : ''}`} />
-                      <span>Transmit</span>
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Send</span>
                     </>
                   )}
-                  {/* Internal Glow */}
-                  <div className="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity blur-2xl" />
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Global Keybinds Hint */}
-        <div className="flex justify-center gap-8 mt-4">
-           <div className="flex items-center gap-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/40" />
-              <span className="text-[8px] font-black uppercase tracking-[0.25em] text-white/20">Secure Link Active</span>
-           </div>
-           <div className="flex items-center gap-2">
-              <Command className="w-2.5 h-2.5 text-white/20" />
-              <span className="text-[8px] font-black uppercase tracking-[0.25em] text-white/20">Shift + Enter New Line</span>
-           </div>
+        <div className="flex justify-center gap-6 mt-3 text-[10px] font-medium text-white/10 uppercase tracking-widest text-center">
+          <div className="flex items-center gap-2">
+            <Command className="w-3 h-3" />
+            <span>Enter to send</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Command className="w-3 h-3" />
+            <span>Shift + Enter for new line</span>
+          </div>
         </div>
       </div>
     </div>

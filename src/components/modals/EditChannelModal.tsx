@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Hash, Info, Save, LoaderCircle, Trash2 } from 'lucide-react';
 import type { Channel, EntityId } from '../chat/types';
@@ -18,29 +18,44 @@ export function EditChannelModal({ isOpen, channel, onClose, onUpdate, onDelete 
   const [description, setDescription] = useState(channel?.description || '');
   const [loading, setLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
-
-  // Sync with channel when it changes
+  const [error, setError] = useState<string | null>(null);
   const channelId = channel?.id;
-  if (channel && (name !== channel.name || description !== (channel.description ?? '')) && !loading) {
-    // Only reset if modal is freshly opened (no user edits yet assumed on first render)
-    // Controlled via the key prop on the modal in the parent
-  }
+
+  useEffect(() => {
+    if (!isOpen || !channel) return;
+    setName(channel.name);
+    setDescription(channel.description || '');
+    setDeleteConfirm(false);
+    setError(null);
+  }, [channel, isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!channel || !name.trim() || loading) return;
     setLoading(true);
-    await onUpdate(channel.id, name.trim(), description.trim());
-    setLoading(false);
-    onClose();
+    setError(null);
+    try {
+      await onUpdate(channel.id, name.trim(), description.trim());
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update the channel.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async () => {
     if (!channel || loading) return;
     setLoading(true);
-    await onDelete(channel.id);
-    setLoading(false);
-    onClose();
+    setError(null);
+    try {
+      await onDelete(channel.id);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete the channel.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -104,6 +119,16 @@ export function EditChannelModal({ isOpen, channel, onClose, onUpdate, onDelete 
                   </span>
                 </div>
               </div>
+
+              {error && (
+                <motion.p
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-red-400"
+                >
+                  {error}
+                </motion.p>
+              )}
 
               <div className="flex gap-4 pt-2">
                 <button type="button" onClick={onClose} className="btn-secondary flex-1 py-4">

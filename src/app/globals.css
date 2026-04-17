@@ -81,7 +81,10 @@
 html, body {
   height: 100%;
   margin: 0;
-  background: var(--bg-primary);
+  background:
+    radial-gradient(circle at top, rgba(59, 130, 246, 0.08), transparent 38%),
+    radial-gradient(circle at bottom left, rgba(139, 92, 246, 0.06), transparent 32%),
+    var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -93,12 +96,21 @@ button, a, [role="button"] {
   cursor: pointer;
 }
 
+.light {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
 @layer components {
   .glass {
     background: var(--glass-bg);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
     border: 1px solid var(--glass-border);
+    box-shadow: 0 24px 80px rgba(15, 23, 42, 0.18);
   }
 
   .btn-primary {

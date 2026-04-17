@@ -14,6 +14,7 @@ export function CreateChannelModal({ isOpen, onClose, onCreate }: CreateChannelM
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Normalize channel name: lowercase, replace spaces with dashes, strip special chars
   const normalizeName = (raw: string) =>
@@ -21,6 +22,7 @@ export function CreateChannelModal({ isOpen, onClose, onCreate }: CreateChannelM
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setName(e.target.value);
+    if (error) setError(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,11 +30,17 @@ export function CreateChannelModal({ isOpen, onClose, onCreate }: CreateChannelM
     const finalName = normalizeName(name);
     if (!finalName || loading) return;
     setLoading(true);
-    await onCreate(finalName, description.trim());
-    setLoading(false);
-    setName('');
-    setDescription('');
-    onClose();
+    setError(null);
+    try {
+      await onCreate(finalName, description.trim());
+      setName('');
+      setDescription('');
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create the channel.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const preview = normalizeName(name);
@@ -107,6 +115,16 @@ export function CreateChannelModal({ isOpen, onClose, onCreate }: CreateChannelM
                   </span>
                 </div>
               </div>
+
+              {error && (
+                <motion.p
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-red-400"
+                >
+                  {error}
+                </motion.p>
+              )}
 
               <div className="flex gap-4 pt-4">
                 <button type="button" onClick={onClose} className="btn-secondary flex-1 py-4">

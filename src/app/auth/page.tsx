@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Turnstile } from '@marsidev/react-turnstile';
-import { 
+import {
   ArrowRight, 
   Eye, 
   EyeOff, 
@@ -22,7 +22,12 @@ import {
   UserCheck,
   ShieldQuestion
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import {
+  supabase,
+  isSupabaseConfigured,
+  SUPABASE_CONFIG_ERROR,
+} from '@/lib/supabase';
+import { useTheme } from '@/hooks/useTheme';
 
 const turnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
@@ -31,34 +36,23 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
-  const [age, setAge] = useState<number | ''>(0);
+  const [age, setAge] = useState<number | ''>('');
   const [parentEmail, setParentEmail] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
   const [turnstileToken, setTurnstileToken] = useState<string | null>(
     turnstileSiteKey ? null : 'local-bypass',
   );
-  
+  const { theme, toggleTheme } = useTheme();
+  const isMinor = typeof age === 'number' && age < 13;
+
   const router = useRouter();
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' || 'dark';
-    setTheme(savedTheme);
-    document.documentElement.className = savedTheme;
-  }, []);
-
-  const toggleTheme = () => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(nextTheme);
-    localStorage.setItem('theme', nextTheme);
-    document.documentElement.className = nextTheme;
-  };
-
-  useEffect(() => {
     const checkUser = async () => {
+      if (!isSupabaseConfigured) return;
       const { data: { session } } = await supabase.auth.getSession();
       if (session) router.push('/chat');
     };
@@ -67,6 +61,11 @@ export default function AuthPage() {
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isSupabaseConfigured) {
+      setError(SUPABASE_CONFIG_ERROR);
+      return;
+    }
     
     if (turnstileSiteKey && !turnstileToken) {
       setError('Please complete the captcha verification.');
@@ -74,11 +73,11 @@ export default function AuthPage() {
     }
 
     if (!isLogin) {
-      if (age === '' || age < 5) {
+      if (typeof age !== 'number' || Number.isNaN(age) || age < 5) {
         setError('Please enter a valid age.');
         return;
       }
-      if (age < 13 && !parentEmail) {
+      if (age < 13 && !parentEmail.trim()) {
         setError('A parent/guardian email is required for users under 13 (COPPA).');
         return;
       }
@@ -103,8 +102,8 @@ export default function AuthPage() {
           data: { 
             full_name: username,
             age: age,
-            parent_email: age < 13 ? parentEmail : null,
-            restricted: age < 13
+            parent_email: isMinor ? parentEmail.trim() : null,
+            restricted: isMinor
           },
           emailRedirectTo: `${window.location.origin}/chat`,
         },
@@ -126,6 +125,11 @@ export default function AuthPage() {
   };
 
   const handleGoogleLogin = async () => {
+    if (!isSupabaseConfigured) {
+      setError(SUPABASE_CONFIG_ERROR);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
@@ -221,6 +225,18 @@ export default function AuthPage() {
           </div>
 
           <form onSubmit={handleEmailAuth} className="space-y-5">
+            {!isSupabaseConfigured && (
+              <div className="rounded-3xl border border-amber-500/20 bg-amber-500/10 p-4 text-left">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">
+                  Workspace Setup Required
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-amber-100/80">
+                  Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+                  to enable sign-in, channels, and real-time sync.
+                </p>
+              </div>
+            )}
+
             <AnimatePresence mode="wait">
               {!isLogin && (
                 <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-5">
@@ -232,7 +248,7 @@ export default function AuthPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="eyebrow ml-1">Chronological Age</label>
                       <div className="relative group">
@@ -240,7 +256,7 @@ export default function AuthPage() {
                         <input type="number" required value={age} onChange={(e) => setAge(e.target.value ? parseInt(e.target.value) : '')} placeholder="Years" className="input-modern pl-12 h-14 font-bold" />
                       </div>
                     </div>
-                    {age !== '' && age < 13 && (
+                    {isMinor && (
                       <motion.div initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="space-y-2">
                         <label className="eyebrow ml-1">Restricted</label>
                         <div className="h-14 rounded-xl border border-orange-500/20 bg-orange-500/5 flex items-center px-4 gap-2">
@@ -251,7 +267,7 @@ export default function AuthPage() {
                     )}
                   </div>
 
-                  {age !== '' && age < 13 && (
+                  {isMinor && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="space-y-2">
                       <label className="eyebrow ml-1">Guardian Intelligence (Email)</label>
                       <div className="relative group">
@@ -305,7 +321,18 @@ export default function AuthPage() {
               </motion.div>
             )}
 
-            <button type="submit" disabled={loading} className="btn-primary w-full py-5 text-sm font-black uppercase tracking-[0.2em] mt-2 shadow-2xl shadow-blue-500/30 active:scale-95 transition-all">
+            {successMessage && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-black uppercase tracking-widest flex items-center gap-3"
+              >
+                <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+                {successMessage}
+              </motion.div>
+            )}
+
+            <button type="submit" disabled={loading || !isSupabaseConfigured} className="btn-primary w-full py-5 text-sm font-black uppercase tracking-[0.2em] mt-2 shadow-2xl shadow-blue-500/30 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-50">
               {loading ? <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto" /> : (
                 <div className="flex items-center justify-center gap-3">
                   <span>{isLogin ? 'Establish Link' : 'Initialize Account'}</span>
@@ -321,8 +348,8 @@ export default function AuthPage() {
             <div className="h-px flex-1 bg-[var(--border-color)]" />
           </div>
 
-          <button type="button" onClick={handleGoogleLogin} disabled={loading}
-            className="btn-secondary w-full py-4 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-sm border-[var(--border-color)] active:scale-95 transition-all"
+          <button type="button" onClick={handleGoogleLogin} disabled={loading || !isSupabaseConfigured}
+            className="btn-secondary w-full py-4 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-sm border-[var(--border-color)] active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Globe className="w-4 h-4 text-blue-500" />
             Sync with Google

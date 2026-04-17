@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -8,7 +8,6 @@ import {
   Search,
   Hash,
   Bell,
-  Sparkles,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -18,7 +17,6 @@ import {
   X,
   Check,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import { ChatInsights } from '@/components/chat/ChatInsights';
 import { MessageInput } from '@/components/chat/MessageInput';
 import { MessageList } from '@/components/chat/MessageList';
@@ -26,79 +24,67 @@ import { Sidebar } from '@/components/chat/Sidebar';
 import { CreateChannelModal } from '@/components/modals/CreateChannelModal';
 import { AddFriendModal } from '@/components/modals/AddFriendModal';
 import { EditChannelModal } from '@/components/modals/EditChannelModal';
+import { ProfileModal } from '@/components/modals/ProfileModal';
+import { useChat } from '@/hooks/useChat';
 import type {
-  AppUser,
-  Channel,
-  Message,
-  PresenceUser,
   UserRole,
-  Profile,
   EntityId,
-  TypingUser,
-  AppNotification,
 } from '@/components/chat/types';
 
 const ACTIVE_CHANNEL_STORAGE_KEY = 'nexus.active-channel';
 
-function aggregateReactions(
-  reactions: Record<string, unknown>[],
-  currentUserId?: string,
-) {
-  const map: Record<string, { emoji: string; count: number; user_reacted: boolean }> = {};
-  reactions.forEach((r) => {
-    const emoji = String(r.emoji);
-    if (!map[emoji]) map[emoji] = { emoji, count: 0, user_reacted: false };
-    map[emoji].count++;
-    if (String(r.user_id) === currentUserId) map[emoji].user_reacted = true;
-  });
-  return Object.values(map);
+function toError(err: unknown, fallback: string) {
+  return err instanceof Error ? err : new Error(fallback);
 }
 
-type Toast = {
-  id: string;
-  message: string;
-  type: 'error' | 'success' | 'info';
-};
-
 export default function ChatPage() {
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [onlineUsers, setOnlineUsers] = useState<PresenceUser[]>([]);
-  const [friends, setFriends] = useState<Profile[]>([]);
-  const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
+  const router = useRouter();
+  const {
+    user,
+    channels,
+    activeChannel,
+    setActiveChannel,
+    messages,
+    onlineUsers,
+    friends,
+    typingUsers,
+    loading,
+    messagesLoading,
+    toasts,
+    addToast,
+    notifications,
+    setNotifications,
+    sendMessage,
+    createChannel,
+    updateChannel,
+    deleteChannel,
+    addFriend,
+    deleteMessage,
+    editMessage,
+    toggleReaction,
+    broadcastTyping,
+    refreshUser,
+  } = useChat();
+
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [channelQuery, setChannelQuery] = useState('');
   const [messageQuery, setMessageQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [messagesLoading, setMessagesLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
-  const [toasts, setToasts] = useState<Toast[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAddFriendModalOpen, setIsAddFriendModalOpen] = useState(false);
   const [isEditChannelOpen, setIsEditChannelOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const notifRef = useRef<HTMLDivElement>(null);
 
-  const router = useRouter();
-
-  const addToast = useCallback((message: string, type: Toast['type'] = 'error') => {
-    const id = Math.random().toString(36).slice(2);
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
-  }, []);
-
-  // Theme sync
+  // Auth check
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    document.documentElement.className = savedTheme;
-  }, []);
+    if (!loading && !user) {
+      router.push('/auth');
+    }
+  }, [loading, user, router]);
 
   // Close notif dropdown when clicking outside
   useEffect(() => {
@@ -122,83 +108,6 @@ export default function ChatPage() {
     return 'member';
   }, [user, activeChannel]);
 
-  const fetchChannels = useCallback(async () => {
-    const { data, error } = await supabase.from('channels').select('*').order('name');
-    if (!error && data) setChannels(data as Channel[]);
-  }, []);
-
-  const fetchFriends = useCallback(async () => {
-    if (!user) return;
-    try {
-      const { data, error } = await supabase
-        .from('friends')
-        .select('friend_id, status')
-        .eq('user_id', user.id)
-        .eq('status', 'accepted');
-
-      if (error || !data) {
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('id, username, avatar_url')
-          .limit(5);
-        if (profileData) setFriends(profileData as unknown as Profile[]);
-        return;
-      }
-      
-      const friendIds = data.map(f => f.friend_id);
-      if (friendIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, username, avatar_url')
-          .in('id', friendIds);
-        if (profiles) setFriends(profiles as unknown as Profile[]);
-      }
-    } catch {
-      setFriends([]);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    let isMounted = true;
-    const init = async () => {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session) {
-          router.push('/auth');
-          return;
-        }
-        if (!isMounted) return;
-        setUser(session.user);
-        await Promise.all([fetchChannels(), fetchFriends()]);
-      } catch (err) {
-        addToast(err instanceof Error ? err.message : 'Connection failed.');
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-    init();
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') router.push('/auth');
-      if (session) {
-        setUser(session.user);
-        void fetchFriends();
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      authListener.subscription.unsubscribe();
-    };
-  }, [router, fetchChannels, fetchFriends, addToast]);
-
-  // Fetch friends when user is set
-  useEffect(() => {
-    if (user) void fetchFriends();
-  }, [user, fetchFriends]);
-
   // Restore last active channel
   useEffect(() => {
     if (channels.length > 0 && !activeChannel) {
@@ -206,7 +115,7 @@ export default function ChatPage() {
       const preferred = channels.find((c) => String(c.id) === savedId) ?? channels[0];
       setActiveChannel(preferred);
     }
-  }, [channels, activeChannel]);
+  }, [channels, activeChannel, setActiveChannel]);
 
   useEffect(() => {
     if (!activeChannel) return;
@@ -214,237 +123,6 @@ export default function ChatPage() {
     setMessageQuery('');
     setSidebarOpen(false);
   }, [activeChannel]);
-
-  // Messages subscription (INSERT, UPDATE, DELETE)
-  useEffect(() => {
-    if (!activeChannel) {
-      setMessages([]);
-      return;
-    }
-    let cancelled = false;
-
-    const fetchMessages = async () => {
-      setMessagesLoading(true);
-      try {
-        const { data, error: messageError } = await supabase
-          .from('messages')
-          .select('*, profiles(username, avatar_url), reactions(*)')
-          .eq('channel_id', activeChannel.id)
-          .order('created_at', { ascending: true });
-
-        if (cancelled) return;
-
-        if (messageError) {
-          // Fallback if reactions table missing
-          const { data: fallbackData, error: fallbackError } = await supabase
-            .from('messages')
-            .select('*, profiles(username, avatar_url)')
-            .eq('channel_id', activeChannel.id)
-            .order('created_at', { ascending: true });
-          
-          if (!fallbackError) setMessages((fallbackData || []) as Message[]);
-        } else if (data) {
-          const processed = (data as Record<string, unknown>[]).map((msg) => ({
-            ...msg,
-            reactions: aggregateReactions(
-              (msg.reactions as Record<string, unknown>[]) || [],
-              user?.id,
-            ),
-          }));
-          setMessages(processed as unknown as Message[]);
-        }
-      } catch (err) {
-        console.error('Fetch error:', err);
-      } finally {
-        if (!cancelled) setMessagesLoading(false);
-      }
-    };
-
-    void fetchMessages();
-
-    const channelName = `realtime:chat:${activeChannel.id}`;
-    const sub = supabase
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `channel_id=eq.${activeChannel.id}`,
-        },
-        async (payload) => {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('username, avatar_url')
-            .eq('id', payload.new.user_id)
-            .single();
-
-          if (cancelled) return;
-          setMessages((curr) => {
-            if (curr.some((m) => String(m.id) === String(payload.new.id))) return curr;
-            return [...curr, { ...payload.new, profiles: profileData } as Message];
-          });
-
-          // Add notification for messages from others
-          if (payload.new.user_id !== user?.id) {
-            const notif: AppNotification = {
-              id: String(payload.new.id),
-              type: 'message',
-              title: `#${activeChannel.name}`,
-              body: String(payload.new.content).slice(0, 80),
-              read: false,
-              created_at: payload.new.created_at as string,
-              channel_id: activeChannel.id,
-            };
-            setNotifications((prev) => [notif, ...prev].slice(0, 20));
-          }
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'messages',
-          filter: `channel_id=eq.${activeChannel.id}`,
-        },
-        (payload) => {
-          if (cancelled) return;
-          setMessages((curr) =>
-            curr.map((m) =>
-              String(m.id) === String(payload.new.id)
-                ? { ...m, content: payload.new.content as string, edited_at: payload.new.updated_at as string }
-                : m,
-            ),
-          );
-        },
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'messages',
-          filter: `channel_id=eq.${activeChannel.id}`,
-        },
-        (payload) => {
-          setMessages((curr) => curr.filter((m) => String(m.id) !== String(payload.old.id)));
-        },
-      )
-      .subscribe();
-
-    // Reactions subscription
-    const reactionSub = supabase
-      .channel(`realtime:reactions:${activeChannel.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reactions' }, async (payload) => {
-        if (cancelled) return;
-
-        const messageId = (payload.new as Record<string, unknown>)?.message_id || (payload.old as Record<string, unknown>)?.message_id;
-        if (!messageId) return;
-
-        const { data: reactionData } = await supabase
-          .from('reactions')
-          .select('*')
-          .eq('message_id', messageId);
-
-        setMessages((curr) =>
-          curr.map((m) =>
-            String(m.id) === String(messageId)
-              ? ({ ...m, reactions: aggregateReactions((reactionData as Record<string, unknown>[]) || [], user?.id) })
-              : m
-          )
-        );
-      })
-      .subscribe();
-    return () => {
-      cancelled = true;
-      void supabase.removeChannel(sub);
-      void supabase.removeChannel(reactionSub);
-    };
-  }, [activeChannel, user?.id]);
-
-  // Presence + typing indicators
-  useEffect(() => {
-    if (!user || !activeChannel) return;
-
-    const presenceChannel = supabase.channel(`presence:${activeChannel.id}`, {
-      config: { presence: { key: user.id } },
-    });
-
-    presenceChannel
-      .on('presence', { event: 'sync' }, () => {
-        const state = presenceChannel.presenceState();
-        const users = Object.values(state).flatMap((presences) =>
-          (presences as Record<string, unknown>[]).map((p) => ({
-            id: p.id as string,
-            username: (p.username as string) || 'Guest',
-            online_at: p.online_at as string,
-            role: (p.id === activeChannel.created_by ? 'creator' : 'member') as UserRole,
-          })),
-        );
-        setOnlineUsers(users as PresenceUser[]);
-      })
-      // Typing indicators via broadcast
-      .on('broadcast', { event: 'typing' }, ({ payload }) => {
-        const typingUser = payload as TypingUser & { stopped?: boolean };
-        if (typingUser.id === user.id) return;
-
-        if (typingUser.stopped) {
-          setTypingUsers((prev) => prev.filter((u) => u.id !== typingUser.id));
-        } else {
-          setTypingUsers((prev) => {
-            const exists = prev.some((u) => u.id === typingUser.id);
-            if (exists) return prev;
-            return [...prev, { id: typingUser.id, username: typingUser.username }];
-          });
-          // Auto-clear after 4s
-          setTimeout(() => {
-            setTypingUsers((prev) => prev.filter((u) => u.id !== typingUser.id));
-          }, 4000);
-        }
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await presenceChannel.track({
-            id: user.id,
-            username: user.user_metadata?.full_name || user.email?.split('@')[0],
-            online_at: new Date().toISOString(),
-          });
-        }
-      });
-
-    return () => {
-      void supabase.removeChannel(presenceChannel);
-    };
-  }, [activeChannel, user]);
-
-  const handleTypingStart = useCallback(() => {
-    if (!user || !activeChannel) return;
-    const ch = supabase.channel(`presence:${activeChannel.id}`);
-    void ch.send({
-      type: 'broadcast',
-      event: 'typing',
-      payload: {
-        id: user.id,
-        username: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
-      },
-    });
-  }, [user, activeChannel]);
-
-  const handleTypingStop = useCallback(() => {
-    if (!user || !activeChannel) return;
-    const ch = supabase.channel(`presence:${activeChannel.id}`);
-    void ch.send({
-      type: 'broadcast',
-      event: 'typing',
-      payload: {
-        id: user.id,
-        username: user.user_metadata?.full_name || user.email?.split('@')[0] || 'User',
-        stopped: true,
-      },
-    });
-  }, [user, activeChannel]);
 
   const handleSendMessage = async (content: string) => {
     if (!user || !activeChannel || isSending) return;
@@ -454,127 +132,92 @@ export default function ChatPage() {
     }
     setIsSending(true);
     try {
-      const { error: sendError } = await supabase
-        .from('messages')
-        .insert({ content, channel_id: activeChannel.id, user_id: user.id });
-      if (sendError) throw sendError;
+      await sendMessage(content);
       setDrafts((curr) => ({ ...curr, [String(activeChannel.id)]: '' }));
     } catch (err) {
-      addToast(err instanceof Error ? err.message : 'Failed to send message.');
+      addToast(toError(err, 'Failed to send message.').message);
     } finally {
       setIsSending(false);
     }
   };
 
   const handleCreateChannel = async (name: string, description: string) => {
-    if (!user) return;
     try {
-      const { data, error } = await supabase
-        .from('channels')
-        .insert({ name, description, created_by: user.id })
-        .select()
-        .single();
-      if (error) throw error;
-      await fetchChannels();
-      setActiveChannel(data as Channel);
+      const newChannel = await createChannel(name, description);
+      if (newChannel) setActiveChannel(newChannel);
       addToast(`#${name} created!`, 'success');
     } catch (err) {
-      addToast(err instanceof Error ? err.message : 'Failed to create channel.');
+      const error = toError(err, 'Failed to create channel.');
+      addToast(error.message);
+      throw error;
     }
   };
 
   const handleUpdateChannel = async (id: EntityId, name: string, description: string) => {
     try {
-      const { error } = await supabase
-        .from('channels')
-        .update({ name, description })
-        .eq('id', id);
-      if (error) throw error;
-      await fetchChannels();
-      // Update activeChannel
-      setActiveChannel((prev) => (prev && String(prev.id) === String(id) ? { ...prev, name, description } : prev));
+      await updateChannel(id, name, description);
       addToast('Channel updated!', 'success');
     } catch (err) {
-      addToast(err instanceof Error ? err.message : 'Failed to update channel.');
+      const error = toError(err, 'Failed to update channel.');
+      addToast(error.message);
+      throw error;
     }
   };
 
   const handleDeleteChannel = async (id: EntityId) => {
     try {
-      const { error } = await supabase.from('channels').delete().eq('id', id);
-      if (error) throw error;
-      await fetchChannels();
-      setActiveChannel(null);
+      const nextChannel =
+        channels.find((channel) => String(channel.id) !== String(id)) ?? null;
+      await deleteChannel(id);
+      setActiveChannel(nextChannel);
       addToast('Channel deleted.', 'info');
     } catch (err) {
-      addToast(err instanceof Error ? err.message : 'Failed to delete channel.');
+      const error = toError(err, 'Failed to delete channel.');
+      addToast(error.message);
+      throw error;
     }
   };
 
   const handleAddFriend = async (email: string) => {
-    if (!user) return;
-    const { data: friendProfile, error: findError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle();
-
-    if (findError || !friendProfile) {
-      throw new Error('User not found in Nexus.');
-    }
-
-    const { error: addError } = await supabase.from('friends').insert({
-      user_id: user.id,
-      friend_id: friendProfile.id,
-      status: 'pending',
-    });
-
-    if (addError) throw addError;
-    await fetchFriends();
-    addToast('Friend request sent!', 'success');
-  };
-
-  const handleDeleteMessage = async (messageId: EntityId) => {
     try {
-      const { error } = await supabase.from('messages').delete().eq('id', messageId);
-      if (error) throw error;
+      await addFriend(email);
+      addToast('Friend request sent!', 'success');
     } catch (err) {
-      addToast(err instanceof Error ? err.message : 'Failed to delete message.');
+      const error = toError(err, 'Failed to add friend.');
+      addToast(error.message);
+      throw error;
     }
   };
 
-  const handleEditMessage = async (messageId: EntityId, newContent: string) => {
+  const handleDeleteMessage = async (id: EntityId) => {
     try {
-      const { error } = await supabase
-        .from('messages')
-        .update({ content: newContent })
-        .eq('id', messageId);
-      if (error) throw error;
+      await deleteMessage(id);
+      addToast('Message removed.', 'info');
     } catch (err) {
-      addToast(err instanceof Error ? err.message : 'Failed to edit message.');
+      const error = toError(err, 'Failed to delete message.');
+      addToast(error.message);
+      throw error;
     }
   };
 
-  const handleToggleReaction = async (messageId: EntityId, emoji: string) => {
-    if (!user) return;
+  const handleEditMessage = async (id: EntityId, content: string) => {
     try {
-      const { data: existing } = await supabase
-        .from('reactions')
-        .select('id')
-        .eq('message_id', messageId)
-        .eq('user_id', user.id)
-        .eq('emoji', emoji)
-        .maybeSingle();
-
-      if (existing) {
-        await supabase.from('reactions').delete().eq('id', existing.id);
-      } else {
-        await supabase
-          .from('reactions')
-          .insert({ message_id: messageId, user_id: user.id, emoji });
-      }
+      await editMessage(id, content);
+      addToast('Message updated.', 'success');
     } catch (err) {
-      console.error('Reaction toggle failed:', err);
+      const error = toError(err, 'Failed to update message.');
+      addToast(error.message);
+      throw error;
+    }
+  };
+
+  const handleToggleReaction = async (id: EntityId, emoji: string) => {
+    try {
+      await toggleReaction(id, emoji);
+    } catch (err) {
+      const error = toError(err, 'Failed to update reaction.');
+      addToast(error.message);
+      throw error;
     }
   };
 
@@ -591,6 +234,51 @@ export default function ChatPage() {
   const filteredChannels = channels.filter((c) =>
     c.name.toLowerCase().includes(channelQuery.toLowerCase()),
   );
+  const todayMessageCount = useMemo(() => {
+    const now = new Date();
+    return messages.filter((message) => {
+      const createdAt = new Date(message.created_at);
+      return (
+        createdAt.getFullYear() === now.getFullYear() &&
+        createdAt.getMonth() === now.getMonth() &&
+        createdAt.getDate() === now.getDate()
+      );
+    }).length;
+  }, [messages]);
+  const contributorCount = useMemo(
+    () => new Set(messages.map((message) => message.user_id)).size,
+    [messages],
+  );
+  const spotlightStats = [
+    {
+      label: 'Realtime',
+      value: activeChannel ? (typingUsers.length > 0 ? 'Live activity' : 'Synced') : 'Idle',
+    },
+    {
+      label: 'Today',
+      value: `${todayMessageCount} msgs`,
+    },
+    {
+      label: 'Contributors',
+      value: `${contributorCount || 0} active`,
+    },
+  ];
+
+  const handleNotificationClick = (notificationId: string, channelId?: EntityId) => {
+    setNotifications((prev) =>
+      prev.map((notif) =>
+        notif.id === notificationId ? { ...notif, read: true } : notif,
+      ),
+    );
+
+    if (channelId) {
+      const channel = channels.find((item) => String(item.id) === String(channelId));
+      if (channel) {
+        setActiveChannel(channel);
+        setNotifOpen(false);
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -605,7 +293,6 @@ export default function ChatPage() {
             <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-[32px] flex items-center justify-center animate-pulse shadow-2xl shadow-blue-500/30">
               <Zap className="w-12 h-12 text-white fill-white" />
             </div>
-            <Sparkles className="w-8 h-8 text-blue-400 absolute -top-3 -right-3 animate-bounce" />
           </div>
           <div className="space-y-2">
             <p className="text-[var(--text-primary)] text-xl font-black tracking-[0.2em] uppercase">
@@ -636,11 +323,17 @@ export default function ChatPage() {
         onClose={() => setSidebarOpen(false)}
         onCreateChannel={() => setIsCreateModalOpen(true)}
         onAddFriend={() => setIsAddFriendModalOpen(true)}
+        onProfileClick={() => setIsProfileModalOpen(true)}
         friends={friends}
       />
 
-      <main className="flex-1 flex flex-col min-w-0 relative">
-        {/* Header */}
+      <main className="flex-1 flex flex-col min-w-0 relative isolate">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute inset-x-0 top-0 h-60 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.14),transparent_65%)]" />
+          <div className="absolute right-0 top-24 h-72 w-72 rounded-full bg-blue-500/8 blur-3xl" />
+          <div className="absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-purple-500/6 blur-3xl" />
+        </div>
+
         <header className="h-16 border-b border-[var(--border-color)] flex items-center justify-between px-4 md:px-6 bg-[var(--bg-primary)]/90 backdrop-blur-2xl z-30 transition-all">
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -667,7 +360,6 @@ export default function ChatPage() {
                       <button
                         onClick={() => setIsEditChannelOpen(true)}
                         className="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-lg transition-all"
-                        title="Edit Channel"
                       >
                         <Settings className="w-3.5 h-3.5" />
                       </button>
@@ -691,7 +383,6 @@ export default function ChatPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Search */}
             <div className="hidden md:flex items-center bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:bg-[var(--bg-primary)] transition-all group w-56">
               <Search className="w-3.5 h-3.5 text-[var(--text-muted)] group-focus-within:text-blue-500 flex-shrink-0" />
               <input
@@ -708,7 +399,6 @@ export default function ChatPage() {
               )}
             </div>
 
-            {/* Notifications */}
             <div className="relative" ref={notifRef}>
               <button
                 onClick={() => setNotifOpen((v) => !v)}
@@ -755,13 +445,7 @@ export default function ChatPage() {
                             className={`p-4 border-b border-[var(--border-color)] hover:bg-[var(--bg-tertiary)] transition-all cursor-pointer ${
                               !n.read ? 'bg-blue-500/5' : ''
                             }`}
-                            onClick={() => {
-                              setNotifications((prev) =>
-                                prev.map((notif) =>
-                                  notif.id === n.id ? { ...notif, read: true } : notif,
-                                ),
-                              );
-                            }}
+                            onClick={() => handleNotificationClick(n.id, n.channel_id)}
                           >
                             <div className="flex items-start gap-3">
                               {!n.read && (
@@ -787,7 +471,6 @@ export default function ChatPage() {
 
             <div className="w-px h-6 bg-[var(--border-color)] mx-1 hidden sm:block" />
 
-            {/* Intel toggle */}
             <button
               onClick={() => setInsightsOpen(!insightsOpen)}
               className={`flex items-center gap-2 px-4 py-2 transition-all rounded-xl border font-black uppercase tracking-[0.15em] text-[10px] active:scale-95 ${
@@ -801,6 +484,55 @@ export default function ChatPage() {
             </button>
           </div>
         </header>
+
+        <div className="border-b border-[var(--border-color)] bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent)] backdrop-blur-xl z-20">
+          <div className="px-4 py-3 md:px-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {spotlightStats.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/70 px-4 py-2 shadow-sm"
+                >
+                  <p className="text-[9px] font-black uppercase tracking-[0.24em] text-[var(--text-muted)]">
+                    {item.label}
+                  </p>
+                  <p className="mt-1 text-xs font-black uppercase tracking-[0.08em] text-[var(--text-primary)]">
+                    {item.value}
+                  </p>
+                </div>
+              ))}
+              {activeChannel?.description && (
+                <div className="max-w-xl rounded-2xl border border-blue-500/15 bg-blue-500/8 px-4 py-2">
+                  <p className="text-[9px] font-black uppercase tracking-[0.24em] text-blue-400/80">
+                    Brief
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--text-secondary)] line-clamp-2">
+                    {activeChannel.description}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="md:hidden flex items-center bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-xl px-3 py-2 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:bg-[var(--bg-primary)] transition-all group w-full">
+              <Search className="w-3.5 h-3.5 text-[var(--text-muted)] group-focus-within:text-blue-500 flex-shrink-0" />
+              <input
+                type="text"
+                placeholder="Search messages..."
+                className="bg-transparent border-none text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none ml-2 w-full font-medium"
+                value={messageQuery}
+                onChange={(e) => setMessageQuery(e.target.value)}
+              />
+              {messageQuery && (
+                <button
+                  onClick={() => setMessageQuery('')}
+                  className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
 
         <div className="flex-1 flex overflow-hidden relative">
           <div className="flex-1 flex flex-col min-w-0">
@@ -823,8 +555,8 @@ export default function ChatPage() {
                 setDrafts((curr) => ({ ...curr, [String(activeChannel?.id)]: val }))
               }
               onSendMessage={handleSendMessage}
-              onTypingStart={handleTypingStart}
-              onTypingStop={handleTypingStop}
+              onTypingStart={() => broadcastTyping(false)}
+              onTypingStop={() => broadcastTyping(true)}
               loading={isSending}
               disabled={!activeChannel || messagesLoading}
               activeChannelName={activeChannel?.name}
@@ -832,7 +564,6 @@ export default function ChatPage() {
             />
           </div>
 
-          {/* Desktop insights panel */}
           <AnimatePresence>
             {insightsOpen && (
               <motion.div
@@ -886,7 +617,6 @@ export default function ChatPage() {
           )}
         </AnimatePresence>
 
-        {/* Toast notifications */}
         <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-[100] space-y-2 pointer-events-none">
           <AnimatePresence>
             {toasts.map((toast) => (
@@ -928,6 +658,15 @@ export default function ChatPage() {
         onClose={() => setIsEditChannelOpen(false)}
         onUpdate={handleUpdateChannel}
         onDelete={handleDeleteChannel}
+      />
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        user={user}
+        onClose={() => setIsProfileModalOpen(false)}
+        onUpdate={async () => {
+          await refreshUser();
+          addToast('Profile synced.', 'success');
+        }}
       />
     </div>
   );

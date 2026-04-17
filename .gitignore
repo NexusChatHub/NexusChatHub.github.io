@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/.gemini
 /.pnp
 .pnp.*
 .yarn/*

@@ -21,6 +21,12 @@ export type Profile = {
   email?: string;
 };
 
+export type MessageReaction = {
+  emoji: string;
+  count: number;
+  user_reacted: boolean;
+};
+
 export type Message = {
   id: EntityId;
   channel_id: EntityId;
@@ -29,6 +35,7 @@ export type Message = {
   created_at: string;
   edited_at?: string | null;
   profiles?: Profile | null;
+  reactions?: MessageReaction[];
 };
 
 export type PresenceUser = {

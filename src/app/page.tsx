@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   ArrowRight, 
@@ -17,30 +16,10 @@ import {
   Moon,
   Sun
 } from 'lucide-react';
+import { useTheme } from '@/hooks/useTheme';
 
 export default function LandingPage() {
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' || 'dark';
-    document.documentElement.className = savedTheme;
-    
-    // Defer state updates to avoid synchronous cascading renders warning
-    const timer = setTimeout(() => {
-      setTheme(savedTheme);
-      setMounted(true);
-    }, 0);
-    
-    return () => clearTimeout(timer);
-  }, []);
-
-  const toggleTheme = () => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(nextTheme);
-    localStorage.setItem('theme', nextTheme);
-    document.documentElement.className = nextTheme;
-  };
+  const { theme, mounted, toggleTheme } = useTheme();
 
   if (!mounted) return null; // Avoid hydration mismatch and unnecessary renders before mount
 
